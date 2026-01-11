@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import telebot
 import os
+import io
 from difflib import get_close_matches
 from datetime import datetime, date, time
 from telebot import types
@@ -17,6 +18,7 @@ WATER_LOG_CSV = "water_log.csv"
 FOOD_LOG_CSV = "food_log.csv"
 users_state = {}  # временно храним данные при заполнении информации о пользователе
 food_state = {}  # временно храним информацию о блюде
+
 
 def load_users():
 	if os.path.exists(CSV_FILE):
@@ -35,6 +37,7 @@ def save_user(data):
 	df = pd.concat([df, pd.DataFrame([data])], ignore_index=True)
 	df.to_csv(CSV_FILE, index=False)
 
+
 @bot.message_handler(commands=["start"])
 def start(message):
 	user = message.from_user
@@ -52,6 +55,7 @@ def start(message):
 
 	bot.send_message(message.chat.id, text, reply_markup=keyboard)
 
+
 @bot.message_handler(commands=["help"])
 def help_command(message):
 	text = (
@@ -68,12 +72,14 @@ def help_command(message):
 	)
 	bot.send_message(message.chat.id, text)
 
+
 @bot.message_handler(func=lambda m: m.text in ["📈 Прогресс", "📊 Статистика"])
 def keyboard_buttons(message):
 	if message.text == "📈 Прогресс":
 		check_progress(message)
 	elif message.text == "📊 Статистика":
 		stats(message)
+
 
 def reset_daily_if_needed(user_id):
 	df = load_users()
@@ -94,7 +100,6 @@ def reset_daily_if_needed(user_id):
 
 		df.loc[df.user_id == user_id, "last_reset_date"] = today
 		df.to_csv(CSV_FILE, index=False)
-
 
 def calculate_bmr(gender, weight, height, age):
 	if gender == "m":
@@ -117,6 +122,7 @@ def activity_multiplier(minutes):
 def water_norm(weight):
 	return weight * 30
 
+
 @bot.message_handler(commands=["set_profile"])
 def set_profile(message):
 	users_state[message.chat.id] = {"user_id": message.chat.id}
@@ -132,6 +138,7 @@ def set_profile(message):
 		"Укажите ваш пол:",
 		reply_markup=markup
 	)
+
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("gender_"))
 def callback_set_gender(call):
@@ -206,22 +213,23 @@ def calculate_auto_calories(message):
 	finalize_profile(message)
 
 def finalize_profile(message):
-	u = users_state[message.chat.id]
+	user_local = users_state[message.chat.id]
 
-	u["water_goal"] = water_norm(u["weight"])
-	u["logged_water"] = 0
-	u["logged_calories"] = 0
-	u["burned_calories"] = 0
-	u["last_reset_date"] = date.today().isoformat()
+	user_local["water_goal"] = water_norm(user_local["weight"])
+	user_local["logged_water"] = 0
+	user_local["logged_calories"] = 0
+	user_local["burned_calories"] = 0
+	user_local["last_reset_date"] = date.today().isoformat()
 
-	save_user(u)
+	save_user(user_local)
 
 	bot.send_message(
 		message.chat.id,
 		f"Профиль сохранён ✅\n"
-		f"🔥 Калории: {u['calorie_goal']} ккал\n"
-		f"💧 Вода: {u['water_goal']} мл"
+		f"🔥 Калории: {user_local['calorie_goal']} ккал\n"
+		f"💧 Вода: {user_local['water_goal']} мл"
 	)
+
 
 @bot.message_handler(commands=["log_water"])
 def log_water(message):
@@ -254,6 +262,7 @@ def log_water(message):
 		f"💧 Выпито: {logged} мл\n"
 		f"🎯 Осталось до нормы: {remaining} мл"
 	)
+
 
 def get_city_temperature(city):
 	url = (
@@ -333,6 +342,7 @@ def log_workout(message):
 		f"💧 Дополнительно: выпейте {total_water} мл\n"
 		f"🌡 Температура в городе {city}: {temp:.1f}°C"
 	)
+
 
 def get_food_info(product_name):
 	url = (
@@ -461,6 +471,7 @@ def ask_manual_calories(message):
 		f"✅ Записано вручную: {calories} ккал"
 	)
 
+
 @bot.message_handler(commands=["check_progress"])
 def check_progress(message):
 	df = load_users()
@@ -496,6 +507,7 @@ def check_progress(message):
 		f"🏃‍♂️ Сожжено: {int(burned)} ккал"
 	)
 
+
 def reset_daily_if_needed(user_id):
 	df = load_users()
 	today = date.today().isoformat()
@@ -530,7 +542,6 @@ def append_water_log(user_id, amount):
 	else:
 		df.to_csv(WATER_LOG_CSV, index=False)
 
-
 def append_food_log(user_id, calories):
 	row = {
 		"user_id": user_id,
@@ -543,6 +554,14 @@ def append_food_log(user_id, calories):
 		df.to_csv(FOOD_LOG_CSV, mode="a", header=False, index=False)
 	else:
 		df.to_csv(FOOD_LOG_CSV, index=False)
+
+
+def send_plot_as_photo(chat_id):
+	buf = io.BytesIO()
+	plt.savefig(buf, format="png")
+	buf.seek(0)
+	plt.close()
+	bot.send_photo(chat_id, buf)
 
 @bot.message_handler(commands=["stats"])
 def stats(message):
@@ -569,20 +588,18 @@ def stats(message):
 			(water_df.datetime >= today_start)
 		]
 
-		water_df["cumulative"] = water_df.amount_ml.cumsum()
+		if not water_df.empty:
+			water_df["cumulative"] = water_df.amount_ml.cumsum()
 
-		plt.figure()
-		plt.plot(water_df.datetime, water_df.cumulative, marker="o")
-		plt.axhline(water_goal, linestyle="--")
-		plt.title("Прогресс воды за день")
-		plt.xlabel("Время")
-		plt.ylabel("мл")
-		plt.tight_layout()
+			plt.figure()
+			plt.plot(water_df.datetime, water_df.cumulative, marker="o")
+			plt.axhline(water_goal, linestyle="--")
+			plt.title("Прогресс выпитой воды за день")
+			plt.xlabel("Время")
+			plt.ylabel("мл")
+			plt.tight_layout()
 
-		water_path = f"water_{user_id}.png"
-		plt.close()
-
-		bot.send_photo(message.chat.id, open(water_path, "rb"))
+			send_plot_as_photo(message.chat.id)
 
 	# График по калориям
 	if os.path.exists(FOOD_LOG_CSV):
@@ -594,20 +611,19 @@ def stats(message):
 			(food_df.datetime >= today_start)
 		]
 
-		food_df["cumulative"] = food_df.calories.cumsum()
+		if not food_df.empty:
+			food_df["cumulative"] = food_df.calories.cumsum()
 
-		plt.figure()
-		plt.plot(food_df.datetime, food_df.cumulative, marker="o")
-		plt.axhline(calorie_goal, linestyle="--")
-		plt.title("Прогресс калорий за день")
-		plt.xlabel("Время")
-		plt.ylabel("ккал")
-		plt.tight_layout()
+			plt.figure()
+			plt.plot(food_df.datetime, food_df.cumulative, marker="o")
+			plt.axhline(calorie_goal, linestyle="--")
+			plt.title("Прогресс по калориям за день")
+			plt.xlabel("Время")
+			plt.ylabel("ккал")
+			plt.tight_layout()
 
-		food_path = f"food_{user_id}.png"
-		plt.close()
+			send_plot_as_photo(message.chat.id)
 
-		bot.send_photo(message.chat.id, open(food_path, "rb"))
 
 @bot.message_handler(commands=["tip"])
 def tip(message):
@@ -670,6 +686,7 @@ def tip(message):
 		f"{activity}\n"
 		f"⏱ Рекомендуемое время: {minutes} минут"
 	)
+
 
 def main():
 	bot.infinity_polling()
