@@ -67,6 +67,7 @@ def help_command(message):
 		"/log_food <название продукта> – записываем еду, которую вы съели\n"
 		"/log_workout <тип> <минуты> – фиксируем сожжённые калории\n"
 		"/check_progress – показывает, сколько воды и калорий потреблено, сожжено и сколько осталось до выполнения цели\n"
+		"/profile - информация об аккаунте\n"
 		"/stats – выводим графики потребления воды и съеденной еды\n"
 		"/tip – подсказки по здоровью\n"
 	)
@@ -474,13 +475,13 @@ def ask_manual_calories(message):
 
 @bot.message_handler(commands=["check_progress"])
 def check_progress(message):
+	reset_daily_if_needed(message.chat.id)
 	df = load_users()
 	user = df[df.user_id == message.chat.id]
 
 	if user.empty:
 		bot.send_message(message.chat.id, "Сначала заполните профиль: /set_profile")
 		return
-	reset_daily_if_needed(message.chat.id)
 	u = user.iloc[0]
 
 	# Лимиты на воду
@@ -505,6 +506,32 @@ def check_progress(message):
 		f"- Потреблено: {int(calories_logged)} ккал из {int(calorie_goal)} ккал\n"
 		f"- Осталось: {int(calories_left)} ккал\n"
 		f"🏃‍♂️ Сожжено: {int(burned)} ккал"
+	)
+
+
+@bot.message_handler(commands=["profile"])
+def check_progress(message):
+	reset_daily_if_needed(message.chat.id)
+	df = load_users()
+	if df.empty or message.chat.id not in df['user_id'].values:
+		bot.send_message(message.chat.id, "Сначала заполните профиль: /set_profile")
+		return
+
+	user_local = df[df.user_id == message.chat.id].iloc[0]
+	user_tg = message.from_user
+	if user_local.gender == "m":
+		gender_send = "Мужской"
+	else:
+		gender_send = "Женский"
+	bot.send_message(
+		message.chat.id,
+		f"Информация о {user_tg.first_name}\n"
+		f"📋 Пол: {gender_send}\n"
+		f"⚖️ Вес: {user_local.weight} кг\n"
+		f"📏 Рост: {user_local.height} см\n"
+		f"🎂 Возраст: {user_local.age} лет\n"
+		f"🏃 Активность: {user_local.activity} мин/день\n"
+		f"🏙️ Город: {user_local.city}"
 	)
 
 
@@ -589,13 +616,20 @@ def stats(message):
 		]
 
 		if not water_df.empty:
+			water_df["step"] = range(1, len(water_df) + 1)
 			water_df["cumulative"] = water_df.amount_ml.cumsum()
 
 			plt.figure()
-			plt.plot(water_df.datetime, water_df.cumulative, marker="o")
+			plt.plot(
+				water_df["step"],
+				water_df["cumulative"],
+				marker="o",
+				linewidth=2
+			)
 			plt.axhline(water_goal, linestyle="--")
 			plt.title("Прогресс выпитой воды за день")
-			plt.xlabel("Время")
+			plt.xticks(water_df["step"])
+			plt.xlabel("Приёмы воды")
 			plt.ylabel("мл")
 			plt.tight_layout()
 
@@ -612,13 +646,20 @@ def stats(message):
 		]
 
 		if not food_df.empty:
+			food_df["step"] = range(1, len(food_df) + 1)
 			food_df["cumulative"] = food_df.calories.cumsum()
 
 			plt.figure()
-			plt.plot(food_df.datetime, food_df.cumulative, marker="o")
+			plt.plot(
+				food_df["step"],
+				food_df["cumulative"],
+				marker="o",
+				linewidth=2
+			)
 			plt.axhline(calorie_goal, linestyle="--")
 			plt.title("Прогресс по калориям за день")
-			plt.xlabel("Время")
+			plt.xticks(food_df["step"])
+			plt.xlabel("Приёмы еды")
 			plt.ylabel("ккал")
 			plt.tight_layout()
 
