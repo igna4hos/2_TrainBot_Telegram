@@ -1,0 +1,3 @@
+user_id,gender,weight,height,age,activity,city,calorie_goal,water_goal,logged_water,logged_calories,burned_calories,last_reset_date
+user_1,m,82.0,183,22,35,Казань,2555,2460.0,1890,3349.7,933,2026-01-14
+user_2,f,64.0,174,21,54,Пятигорск,2265,1920.0,800,376.0,125,2026-01-14
